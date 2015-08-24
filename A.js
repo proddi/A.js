@@ -6,19 +6,19 @@ var A = (function() {
      */
     EasingFunctions = {
       // no easing, no acceleration
-      linear: function (t) { return t },
+      "linear": function (t) { return t },
       // accelerating from zero velocity
-      easeInQuad: function (t) { return t*t },
+      "in": function (t) { return t*t },
       // decelerating to zero velocity
-      easeOutQuad: function (t) { return t*(2-t) },
+      "out": function (t) { return t*(2-t) },
       // acceleration until halfway, then deceleration
-      easeInOutQuad: function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t },
+      "in-out": function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t },
       // accelerating from zero velocity
-      easeInCubic: function (t) { return t*t*t },
+      "in-cubic": function (t) { return t*t*t },
       // decelerating to zero velocity
-      easeOutCubic: function (t) { return (--t)*t*t+1 },
+      "out-cubic": function (t) { return (--t)*t*t+1 },
       // acceleration until halfway, then deceleration
-      easeInOutCubic: function (t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1 },
+      "in-out-cubic": function (t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1 },
       // accelerating from zero velocity
       easeInQuart: function (t) { return t*t*t*t },
       // decelerating to zero velocity
@@ -37,8 +37,13 @@ var A = (function() {
         accessors: {},
     };
 
+    var defaults = {
+        duration: 500,
+        easing: EasingFunctions.linear,
+    };
+
     var exports = {
-    }
+    };
 
     // API
     var A = function A(el, types) {
@@ -52,6 +57,7 @@ var A = (function() {
         this._tickId = undefined;
         this._values = {};
         this._types = types || dom_types;
+        this._defaults = {};
     };
 
     A.prototype.add = function add(animation) {
@@ -81,8 +87,11 @@ var A = (function() {
             return this._values[name];
         }
         var Klass = this._types.accessors[name];
-        if (!Klass) throw "No Support for property named " + name;
-        return this._values[name] = new Klass(this._el, name)
+        if (Klass) {
+            var accessor = this._values[name] = new Klass(this._el, name)
+            this._defaults[name] = accessor.current();
+            return accessor;
+        }
     }
 
     A.prototype.animate = function animate(what, options) {
@@ -90,19 +99,39 @@ var A = (function() {
         return this;
     };
 
-    A.prototype.set = function set(what) {
-        new ObjectValue(this, what).target(what);
+    A.prototype.delay = function delay(ms) {
+        this.add(new Animation(this, {}, { duration: ms }));
+        return this;
+    };
+
+    A.prototype.set = function set(values) {
+        this.add({
+            start: function() {},
+            progress: function() {
+                for (var name in values) {
+                    var accessor = this.getAccessor(name);
+                    if (accessor) {
+                        if (accessor.set) {
+                            accessor.set(values[name]);
+                        } else {
+                            console.warn("A.js:", "accessor", accessor, "doesn't have a .set()");
+                        }
+                    } else {
+                        console.warn("A.js:", "unable to handle property '"+name+"'");
+                    }
+                }
+            }.bind(this),
+        });
         return this;
     };
 
     A.prototype.reset = function reset() {
-        if (this._tickId) {
-            window.cancelAnimationFrame(this._tickId);
-            this._tickId = undefined;
-            this._current = undefined;
-            this._queue = [];
-        }
-        this._values = {};
+        this.add({
+            start: function() {},
+            progress: function() {
+                this.set(this._defaults);
+            }.bind(this),
+        });
         return this;
     };
 
@@ -131,8 +160,8 @@ var A = (function() {
     function Animation(scope, target, options) {
         options = options || {}
         this._scope = scope;
-        this._easing = options.easing || EasingFunctions.easeInOutCubic;
-        this._duration = options.duration || 2000;
+        this._easing = EasingFunctions[options.easing] || (typeof(options.easing)==="function" && options.easing) || defaults.easing;
+        this._duration = options.duration || defaults.duration;
         this._target = target;
         this._value = new ObjectValue(scope, target);
     }
@@ -158,7 +187,12 @@ var A = (function() {
     function ObjectValue(scope, targets) {
         this.values = []
         for (var name in targets) {
-            this.values.push(scope.getAccessor(name));
+            var accessor = scope.getAccessor(name);
+            if (accessor) {
+                this.values.push(accessor);
+            } else {
+                console.warn("A.js:", "unable to handle property '"+name+"'");
+            }
         }
     };
     ObjectValue.prototype.target = function target(targets) {
@@ -179,32 +213,48 @@ var A = (function() {
  * CSS value accessor
  */
 
+    var foo = {  // replace my with a regexp
+        backgroundColor: "background-color",
+        marginLeft: "margin-left",
+        borderColor: "border-color",
+    };
+
     function CSSValue(el, name) {
         this.el = el;
         this.css = window.getComputedStyle(el);
         this.name = name;
     };
+    CSSValue.prototype.set = function set(value) {
+        this.to = value;
+        this._set(value);
+    };
+    CSSValue.prototype._set = function _set(value) {
+        this.el.style[this.name] = value + "px";
+    };
     CSSValue.prototype.current = function current() {
-        return parseInt(this.css.getPropertyValue(this.name));
+        return parseInt(this.css.getPropertyValue(foo[this.name]) || this.css.getPropertyValue(this.name));
     };
     CSSValue.prototype.target = function target(value) {
         this.from = this.to || this.current();
         this.to = value;
-//        console.log("Value.target.get()", this.name, this.from);
     };
     CSSValue.prototype.progress = function progress(progress) {
-        this.el.style[this.name] = this.from + (this.to-this.from)*progress + "px";
+        this._set(this.from + (this.to-this.from)*progress);
     };
     dom_types.accessors.width = CSSValue;
     dom_types.accessors.height = CSSValue;
-
+    dom_types.accessors.marginLeft = CSSValue;
 
 /*
  * CSS color accessor
  */
 
     var namedColors = {
-        black: { r:0, g:0, b:0, },
+        black: { r:0  , g:0  , b:0  , },
+        white: { r:255, g:255, b:255, },
+        red:   { r:255, g:0  , b:0  , },
+        green: { r:0  , g:255, b:0  , },
+        blue:  { r:0  , g:0  , b:255, },
     };
 
     var parseColor = exports.parseColor = function parseColor(s) {
@@ -259,29 +309,29 @@ var A = (function() {
         this.name = name;
     };
 
-    var foo = {
-        backgroundColor: "background-color",
+    CSSColorValue.prototype.set = function set(value) {
+        value = typeof(value) === "object" ? value : parseColor(value);
+        this.to = value;
+        this._set(value);
     };
-
+    CSSColorValue.prototype._set = function _set(c) {
+        this.el.style[this.name] = (c.a === undefined) ? "rgb("+c.r+","+c.g+","+c.b+")" : "rgba("+c.r+","+c.g+","+c.b+","+c.a+")";
+    };
     CSSColorValue.prototype.current = function current() {
-        var cssKey = foo[this.name];
-        cssKey && this.css.getPropertyValue(cssKey) || this.el.style[this.name];
-        return parseColor(this.css.getPropertyValue("background-color"));
+        return parseColor(this.css.getPropertyValue(foo[this.name]) || this.css.getPropertyValue(this.name));
     };
     CSSColorValue.prototype.target = function target(value) {
         this.from = this.to || this.current();
         this.to = parseColor(value);
-//        console.log("CSSColorValue.target.get()", this.name, this.from, this.to);
     };
     CSSColorValue.prototype.progress = function progress(progress) {
         var c = blendColor(this.from, this.to, progress)
-          , s = (c.a === undefined) ? "rgb("+c.r+","+c.g+","+c.b+")" : "rgba("+c.r+","+c.g+","+c.b+","+c.a+")"
-        this.el.style[this.name] = s;
-//        console.log("CSSColorValue", this.name, s, this.from, this.to);
+        this._set(c);
     };
 
     dom_types.accessors.color = CSSColorValue;
     dom_types.accessors.backgroundColor = CSSColorValue;
+    dom_types.accessors.borderColor = CSSColorValue;
 
 
 
@@ -289,5 +339,6 @@ var A = (function() {
     function Constructor(ctx, a1, a2, a3) { return new A(ctx, a1, a2, a3); };
     Constructor.types = dom_types;
     Constructor.exports = exports;
+    Constructor.defaults = defaults;
     return Constructor;
 })();
