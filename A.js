@@ -33,9 +33,39 @@ var A = (function() {
       easeInOutQuint: function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t }
     }
 
-    var dom_types = {
-        accessors: {},
+
+    function ObjectValue(scope, targets) {
+        this.values = []
+        for (var name in targets) {
+            var accessor = scope.getAccessor(name);
+            if (accessor) {
+                this.values.push(accessor);
+            } else {
+                console.warn("A.js:", "unable to handle property '"+name+"'");
+            }
+        }
     };
+
+    ObjectValue.prototype.set = function set(targets) {
+        this.values.forEach(function(value) {
+            value.set(targets[value.name]);
+        });
+    };
+
+    ObjectValue.prototype.target = function target(targets) {
+        this.values.forEach(function(value) {
+            value.target(targets[value.name]);
+        });
+    };
+
+    ObjectValue.prototype.progress = function progress(progress) {
+        this.values.forEach(function(value) {
+            value.progress(progress);
+        });
+    };
+
+
+
 
     var defaults = {
         duration: 500,
@@ -43,20 +73,26 @@ var A = (function() {
     };
 
     var exports = {
+        ValueGroup: ObjectValue,
     };
 
+    var engines = [];
+
+
     // API
-    var A = function A(el, types) {
-//        console.log("A", el, typeof(el));
-        if ('string' == typeof el) el = document.querySelector(el);
-        if (!el) throw "No valid node found"
-        this._el = el;
+    var A = function A(el) {
+        for (var i=0, engine, o; (engine = engines[i]); i++) {
+            o = engine.test(el);
+            if (o) break;
+        }
+        if (!o) throw "No valid object engine found for " + el;
+        this._engine = engine;
+        this._el = o;
         this._queue = [];
         this._current = undefined;
         this._tickFuncHandler = this._tickFunc.bind(this);
         this._tickId = undefined;
         this._values = {};
-        this._types = types || dom_types;
         this._defaults = {};
     };
 
@@ -82,17 +118,23 @@ var A = (function() {
         this._tickId = this._current && window.requestAnimationFrame(this._tickFuncHandler) || undefined;
     };
 
+    A.prototype.getValueGroup = function getValueGroup(targets) {
+        return this._engine.getValueGroup ? this._engine.getValueGroup(this, targets) : new ObjectValue(this, targets);
+    };
+
     A.prototype.getAccessor = function getAccessor(name) {
+        // cache lookup
         if (name in this._values) {
             return this._values[name];
         }
-        var Klass = this._types.accessors[name];
-        if (Klass) {
-            var accessor = this._values[name] = new Klass(this._el, name)
+        var accessor = this._values[name] = this._engine.getAccessor(this._el, name);
+        if (accessor) {
             this._defaults[name] = accessor.current();
             return accessor;
+        } else {
+            console.warn("Unable to create accessor for", name);
         }
-    }
+    };
 
     A.prototype.animate = function animate(what, options) {
         this.add(new Animation(this, what, options));
@@ -108,18 +150,7 @@ var A = (function() {
         this.add({
             start: function() {},
             progress: function() {
-                for (var name in values) {
-                    var accessor = this.getAccessor(name);
-                    if (accessor) {
-                        if (accessor.set) {
-                            accessor.set(values[name]);
-                        } else {
-                            console.warn("A.js:", "accessor", accessor, "doesn't have a .set()");
-                        }
-                    } else {
-                        console.warn("A.js:", "unable to handle property '"+name+"'");
-                    }
-                }
+                this.getValueGroup(values).set(values);
             }.bind(this),
         });
         return this;
@@ -135,14 +166,13 @@ var A = (function() {
         return this;
     };
 
-    A.prototype.destroy = function destroy(callback) {
-        this.add({
-            start: function() {},
-            progress: function() {
-                this.reset();
-//                console.warn("TODO: remove all references...");
-            }.bind(this),
-        });
+    A.prototype.clear = function clear() {
+        if (this._tickId) {
+            window.cancelAnimationFrame(this._tickId);
+            this._tickId = undefined;
+            this._current = undefined;
+            this._queue = [];
+        }
         return this;
     };
 
@@ -163,7 +193,7 @@ var A = (function() {
         this._easing = EasingFunctions[options.easing] || (typeof(options.easing)==="function" && options.easing) || defaults.easing;
         this._duration = options.duration || defaults.duration;
         this._target = target;
-        this._value = new ObjectValue(scope, target);
+        this._value = scope.getValueGroup(target);//scope._engine.getValueGroup ? scope._engine.getValueGroup(scope, target) : new ObjectValue(scope, target);
     }
 
     Animation.prototype.start = function start(timestamp) {
@@ -184,29 +214,29 @@ var A = (function() {
     };
 
 
-    function ObjectValue(scope, targets) {
-        this.values = []
-        for (var name in targets) {
-            var accessor = scope.getAccessor(name);
-            if (accessor) {
-                this.values.push(accessor);
-            } else {
-                console.warn("A.js:", "unable to handle property '"+name+"'");
-            }
-        }
-    };
-    ObjectValue.prototype.target = function target(targets) {
-        this.values.forEach(function(value) {
-            value.target(targets[value.name]);
-        });
-    };
+    /**
+     * DOM engine
+     */
 
-    ObjectValue.prototype.progress = function progress(progress) {
-        this.values.forEach(function(value) {
-            value.progress(progress);
-        });
-    };
+    var dom_accessors = {};
 
+    engines.push({
+        name: "DOM",
+        test: function(obj) {
+            if (obj instanceof HTMLElement) return obj;
+            if ('string' == typeof obj) return document.querySelector(obj);
+        },
+
+        getAccessor: function(obj, name) {
+            var Klass = dom_accessors[name];
+            if (Klass) return new Klass(obj, name);
+        },
+
+        getValueGroup: function(scope, targets) {
+            return new ObjectValue(scope, targets);
+        },
+
+    });
 
 
 /*
@@ -241,9 +271,9 @@ var A = (function() {
     CSSValue.prototype.progress = function progress(progress) {
         this._set(this.from + (this.to-this.from)*progress);
     };
-    dom_types.accessors.width = CSSValue;
-    dom_types.accessors.height = CSSValue;
-    dom_types.accessors.marginLeft = CSSValue;
+    dom_accessors.width = CSSValue;
+    dom_accessors.height = CSSValue;
+    dom_accessors.marginLeft = CSSValue;
 
 /*
  * CSS color accessor
@@ -329,16 +359,16 @@ var A = (function() {
         this._set(c);
     };
 
-    dom_types.accessors.color = CSSColorValue;
-    dom_types.accessors.backgroundColor = CSSColorValue;
-    dom_types.accessors.borderColor = CSSColorValue;
+    dom_accessors.color = CSSColorValue;
+    dom_accessors.backgroundColor = CSSColorValue;
+    dom_accessors.borderColor = CSSColorValue;
 
 
 
     // API
     function Constructor(ctx, a1, a2, a3) { return new A(ctx, a1, a2, a3); };
-    Constructor.types = dom_types;
     Constructor.exports = exports;
     Constructor.defaults = defaults;
+    Constructor.engines = engines;
     return Constructor;
 })();
