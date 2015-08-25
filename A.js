@@ -229,16 +229,104 @@ var A = (function() {
     /**
      * DOMAnimator to manipulate dom nodes
      */
-    function DOMAnimator(obj) {
+    function DOMNode(obj) {
         Animator.apply(this, arguments);
     };
-    DOMAnimator.prototype = Object.create(Animator.prototype, {});
-    DOMAnimator.prototype.constructor = DOMAnimator;
+    DOMNode.prototype = Object.create(Animator.prototype, {});
+    DOMNode.prototype.constructor = DOMNode;
 
-    DOMAnimator.prototype._lookup_accessor = function _lookup_accessor(name) {
-        var Klass = dom_accessors[name];
-        if (Klass) return new Klass(this._obj, name);
+    DOMNode.prototype._lookup_accessor = function _lookup_accessor(name) {
+        return dom_accessors[name] && dom_accessors[name](this, name);
     };
+
+    DOMNode.prototype._values_progress = function _values_to(progress, accessors) {
+        var postHooks = [];
+
+        accessors.forEach(function(accessor) {
+            var hook = accessor.progress(progress);
+            if (hook && postHooks.indexOf(hook)===-1) {
+                postHooks.push(hook);
+            }
+        });
+
+        postHooks.forEach(function(hook) {
+            hook(progress);
+        });
+    };
+
+
+    function ObjectAccessor(scope) {
+        console.log("ObjectAccessor>", arguments);
+        this.scope = scope;
+        this.from = {};
+        this.to = {};
+        this._current = {};
+        this._hook = this._progressPostHook.bind(this);
+
+    };
+    ObjectAccessor.prototype.current = function current(member) {
+//        this.from[member] = val;
+        console.log("ObjectAccessor.current>", member);
+        return 0;
+    };
+    ObjectAccessor.prototype.target = function target(member, val) {
+        this.from[member] = this.to[member] || 0;
+        this.to[member] = val;
+        console.log("ObjectAccessor.target>", member, "=", val);
+    };
+
+    ObjectAccessor.prototype.progress = function progress(member, progress) {
+        console.log("ObjectAccessor.progress>", arguments, "targets=", this.targets);
+        this._current[member] = this.from[member] + (this.to[member]-this.from[member])*progress;
+        return this._hook;
+    };
+
+    ObjectAccessor.prototype._progressPostHook = function _progressPostHook(progress) {
+        console.log("ObjectAccessor._progressPostHook>", progress, this._current);
+
+        // CSS propritary stuff
+        var foo = {
+            translateX: ["translateX(", "px)"],
+            translateY: ["translateY(", "px)"],
+            scale:      ["scale(", ")"],
+        };
+        var elements = [];
+        for (var key in this._current) {
+            if (key in foo) {
+                var e = foo[key];
+                elements.push(e[0] + this._current[key] + e[1]);
+            } else {
+                console.warn("Unable to build", key);
+            }
+        }
+
+        this.scope._obj.style.transform = elements.join(" ");
+        // --------------------
+
+        this._current = {};
+    };
+
+    function complexProperty(cat, member) { // memberAccessor
+        return function init(scope, name) {
+            console.log("foo.constructor(", arguments, ")");
+            var objectAccessor = scope[cat] = scope[cat] || new ObjectAccessor(scope);
+            return {
+                name: name,
+                current: objectAccessor.current.bind(objectAccessor, member),
+                target: objectAccessor.target.bind(objectAccessor, member),
+                progress: objectAccessor.progress.bind(objectAccessor, member),
+            };
+        };
+    };
+
+
+
+    dom_accessors.rotate = complexProperty("transform", "rotate");
+    dom_accessors.scale = complexProperty("transform", "scale");
+    dom_accessors.translate = complexProperty("transform", "translate");
+    dom_accessors.x = complexProperty("transform", "translateX");
+    dom_accessors.y = complexProperty("transform", "translateY");
+
 
 
 /*
@@ -251,9 +339,9 @@ var A = (function() {
         borderColor: "border-color",
     };
 
-    function CSSValue(el, name) {
-        this.el = el;
-        this.css = window.getComputedStyle(el);
+    function CSSValue(scope, name) {
+        this.el = scope._obj;
+        this.css = window.getComputedStyle(this.el);
         this.name = name;
     };
     CSSValue.prototype.set = function set(value) {
@@ -273,9 +361,9 @@ var A = (function() {
     CSSValue.prototype.progress = function progress(progress) {
         this._set(this.from + (this.to-this.from)*progress);
     };
-    dom_accessors.width = CSSValue;
-    dom_accessors.height = CSSValue;
-    dom_accessors.marginLeft = CSSValue;
+    dom_accessors.width = function(a,b,c) { return new CSSValue(a, b, c); };
+    dom_accessors.height = function(a,b,c) { return new CSSValue(a, b, c); };
+    dom_accessors.marginLeft = function(a,b,c) { return new CSSValue(a, b, c); };
 
 /*
  * CSS color accessor
@@ -335,9 +423,9 @@ var A = (function() {
 
     };
 
-    function CSSColorValue(el, name) {
-        this.el = el;
-        this.css = window.getComputedStyle(el);
+    function CSSColorValue(scope, name) {
+        this.el = scope._obj;
+        this.css = window.getComputedStyle(this.el);
         this.name = name;
     };
 
@@ -361,24 +449,24 @@ var A = (function() {
         this._set(c);
     };
 
-    dom_accessors.color = CSSColorValue;
-    dom_accessors.backgroundColor = CSSColorValue;
-    dom_accessors.borderColor = CSSColorValue;
+    dom_accessors.color = function(a,b,c) { return new CSSColorValue(a, b, c); };
+    dom_accessors.backgroundColor = function(a,b,c) { return new CSSColorValue(a, b, c); };
+    dom_accessors.borderColor = function(a,b,c) { return new CSSColorValue(a, b, c); };
 
 
 
     exports.Animator = Animator;
     exports.Animation = Animation;
-    exports.DOMAnimator = DOMAnimator;
+    exports.DOMNode = DOMNode;
 
-    DOMAnimator.factory = function factory(obj) {
-        if (obj instanceof HTMLElement) return new DOMAnimator(obj);
+    DOMNode.factory = function factory(obj) {
+        if (obj instanceof HTMLElement) return new DOMNode(obj);
         if ('string' === typeof obj) {
             var obj = document.querySelector(obj);
-            if (obj) return new DOMAnimator(obj);
+            if (obj) return new DOMNode(obj);
         }
     }
-    engines.push(DOMAnimator);
+    engines.push(DOMNode);
 
     function A(obj, a1, a2, a3) {
         for (var i=0, Klass, instance; (Klass=engines[i]); i++) {
