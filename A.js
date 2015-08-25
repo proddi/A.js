@@ -154,9 +154,13 @@ var A = (function() {
     /**
      * Insert a delay to pause the animation-sequence for the given ms
      */
-    Animator.prototype.delay = function delay(ms) {
+    Animator.prototype.sleep = function sleep(ms) {
         this._add(new Animation(this, {}, { duration: ms }));
         return this;
+    }
+    Animator.prototype.delay = function delay(ms) {
+        console.warn("A().delay() is deprecated - use .sleep() instead");
+        return this.sleep.apply(this, arguments);
     };
 
     /**
@@ -239,94 +243,64 @@ var A = (function() {
         return dom_accessors[name] && dom_accessors[name](this, name);
     };
 
-    DOMNode.prototype._values_progress = function _values_to(progress, accessors) {
-        var postHooks = [];
 
-        accessors.forEach(function(accessor) {
-            var hook = accessor.progress(progress);
-            if (hook && postHooks.indexOf(hook)===-1) {
-                postHooks.push(hook);
-            }
-        });
-
-        postHooks.forEach(function(hook) {
-            hook(progress);
-        });
+    function Property(scope, name) {
+        this.name = name;
+        this.scope = scope;
     };
 
 
-    function ObjectAccessor(scope) {
-        console.log("ObjectAccessor>", arguments);
-        this.scope = scope;
+    function DOMTransformProperty(scope, name) {
+        Property.apply(this, arguments);
+        this.el = scope._obj;
+        this.css = window.getComputedStyle(this.el);
         this.from = {};
         this.to = {};
-        this._current = {};
-        this._hook = this._progressPostHook.bind(this);
-
     };
-    ObjectAccessor.prototype.current = function current(member) {
-//        this.from[member] = val;
-        console.log("ObjectAccessor.current>", member);
-        return 0;
-    };
-    ObjectAccessor.prototype.target = function target(member, val) {
-        this.from[member] = this.to[member] || 0;
-        this.to[member] = val;
-        console.log("ObjectAccessor.target>", member, "=", val);
-    };
+    DOMTransformProperty.prototype = Object.create(Property.prototype, {});
+    DOMTransformProperty.prototype.constructor = DOMTransformProperty;
 
-    ObjectAccessor.prototype.progress = function progress(member, progress) {
-        console.log("ObjectAccessor.progress>", arguments, "targets=", this.targets);
-        this._current[member] = this.from[member] + (this.to[member]-this.from[member])*progress;
-        return this._hook;
+    DOMTransformProperty.prototype.current = function current() {
+        return this.from;
     };
-
-    ObjectAccessor.prototype._progressPostHook = function _progressPostHook(progress) {
-        console.log("ObjectAccessor._progressPostHook>", progress, this._current);
-
-        // CSS propritary stuff
-        var foo = {
-            translateX: ["translateX(", "px)"],
-            translateY: ["translateY(", "px)"],
-            scale:      ["scale(", ")"],
-        };
-        var elements = [];
-        for (var key in this._current) {
-            if (key in foo) {
-                var e = foo[key];
-                elements.push(e[0] + this._current[key] + e[1]);
+    DOMTransformProperty.prototype.target = function target(values) {
+//        console.log("target>", "from=", this.from, ", to=", this.to, ", values=", values);
+        for (var key in this.to) { this.from[key] = this.to[key]; }
+        for (var key in values) {
+            if (key in this.functions) {
+                this.from[key] = this.to[key] || this.current()[key] || this.defaults[key] || 0;
             } else {
-                console.warn("Unable to build", key);
+                console.warn("transform is not supporting", key);
             }
+        }
+//        console.log("target<", "from=", this.from, ", to=", this.to, ", values=", values);
+        this.to = values;
+    };
+    DOMTransformProperty.prototype.progress = function progress(progress) {
+        var values = {};
+        for (var key in this.from) { values[key] = key in this.to ? (this.from[key]+(this.to[key]-this.from[key])*progress) : this.from[key]; }
+//        console.log(values);
+        var elements = [];
+        for (var key in values) {
+            elements.push(this.functions[key](values[key]));
         }
 
         this.scope._obj.style.transform = elements.join(" ");
-        // --------------------
 
-        this._current = {};
     };
 
-    function complexProperty(cat, member) { // memberAccessor
-        return function init(scope, name) {
-            console.log("foo.constructor(", arguments, ")");
-            var objectAccessor = scope[cat] = scope[cat] || new ObjectAccessor(scope);
-            return {
-                name: name,
-                current: objectAccessor.current.bind(objectAccessor, member),
-                target: objectAccessor.target.bind(objectAccessor, member),
-                progress: objectAccessor.progress.bind(objectAccessor, member),
-            };
-        };
+    DOMTransformProperty.prototype.functions = {
+        x:      function(val) { return "translateX(" +val + "px)" },
+        y:      function(val) { return "translateY(" +val + "px)" },
+        scale:  function(val) { return "scale(" +val + ")" },
+        rotate: function(val) { return "rotate(" +val + "deg)" },
     };
 
+    DOMTransformProperty.prototype.defaults = {
+        scale: 1,
+    };
 
-
-    dom_accessors.rotate = complexProperty("transform", "rotate");
-    dom_accessors.scale = complexProperty("transform", "scale");
-    dom_accessors.translate = complexProperty("transform", "translate");
-    dom_accessors.x = complexProperty("transform", "translateX");
-    dom_accessors.y = complexProperty("transform", "translateY");
-
+    dom_accessors.transform = function(a,b,c) { return new DOMTransformProperty(a, b, c); };
 
 
 /*
@@ -340,16 +314,20 @@ var A = (function() {
     };
 
     function CSSValue(scope, name) {
+        this.name = name;
         this.el = scope._obj;
         this.css = window.getComputedStyle(this.el);
-        this.name = name;
     };
     CSSValue.prototype.set = function set(value) {
         this.to = value;
         this._set(value);
     };
     CSSValue.prototype._set = function _set(value) {
-        this.el.style[this.name] = value + "px";
+        if ("opacity"===this.name) {
+            this.el.style[this.name] = value;
+        } else {
+            this.el.style[this.name] = value + "px";
+        }
     };
     CSSValue.prototype.current = function current() {
         return parseInt(this.css.getPropertyValue(foo[this.name]) || this.css.getPropertyValue(this.name));
@@ -361,6 +339,7 @@ var A = (function() {
     CSSValue.prototype.progress = function progress(progress) {
         this._set(this.from + (this.to-this.from)*progress);
     };
+    dom_accessors.opacity = function(a,b,c) { return new CSSValue(a, b, c); };
     dom_accessors.width = function(a,b,c) { return new CSSValue(a, b, c); };
     dom_accessors.height = function(a,b,c) { return new CSSValue(a, b, c); };
     dom_accessors.marginLeft = function(a,b,c) { return new CSSValue(a, b, c); };
