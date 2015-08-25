@@ -33,70 +33,41 @@ var A = (function() {
       easeInOutQuint: function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t }
     }
 
-
-    function ObjectValue(scope, targets) {
-        this.values = []
-        for (var name in targets) {
-            var accessor = scope.getAccessor(name);
-            if (accessor) {
-                this.values.push(accessor);
-            } else {
-                console.warn("A.js:", "unable to handle property '"+name+"'");
-            }
-        }
-    };
-
-    ObjectValue.prototype.set = function set(targets) {
-        this.values.forEach(function(value) {
-            value.set(targets[value.name]);
-        });
-    };
-
-    ObjectValue.prototype.target = function target(targets) {
-        this.values.forEach(function(value) {
-            value.target(targets[value.name]);
-        });
-    };
-
-    ObjectValue.prototype.progress = function progress(progress) {
-        this.values.forEach(function(value) {
-            value.progress(progress);
-        });
-    };
-
-
-
-
+    /**
+     * Defaults for the animation engine
+     */
     var defaults = {
         duration: 500,
-        easing: EasingFunctions.linear,
+        easing: "in-out",
     };
 
+    /**
+     * Exported functions for reuse
+     */
     var exports = {
-        ValueGroup: ObjectValue,
+        easings: EasingFunctions,
     };
 
+    /**
+     * registered engines
+     */
     var engines = [];
 
 
-    // API
-    var A = function A(el) {
-        for (var i=0, engine, o; (engine = engines[i]); i++) {
-            o = engine.test(el);
-            if (o) break;
-        }
-        if (!o) throw "No valid object engine found for " + el;
-        this._engine = engine;
-        this._el = o;
+    /**
+     * Abstract Animator class
+     */
+    function Animator(obj) {
+        this._obj = obj;
         this._queue = [];
         this._current = undefined;
         this._tickFuncHandler = this._tickFunc.bind(this);
         this._tickId = undefined;
-        this._values = {};
+        this._accessors = {};
         this._defaults = {};
     };
 
-    A.prototype.add = function add(animation) {
+    Animator.prototype._add = function add(animation) {
         this._queue.push(animation);
         if (!this._tickId) {  // start animation
             this._current = this._queue.shift();
@@ -104,30 +75,26 @@ var A = (function() {
         }
     };
 
-    A.prototype._tickFunc = function _tickFunc(timestamp) {
+    Animator.prototype._tickFunc = function _tickFunc(timestamp) {
         if (!this._current._starttime) {
-            this._current.start(timestamp);
+            this._current.start && this._current.start(timestamp);
         }
         if (!this._current.progress(timestamp)) {
+            this._current.end && this._current.end(timestamp);
             // animation ended, next one?
             this._current = this._queue.shift();
             if (this._current) {
-                this._current.start(timestamp);
+                this._current.start && this._current.start(timestamp);
             }
         }
         this._tickId = this._current && window.requestAnimationFrame(this._tickFuncHandler) || undefined;
     };
 
-    A.prototype.getValueGroup = function getValueGroup(targets) {
-        return this._engine.getValueGroup ? this._engine.getValueGroup(this, targets) : new ObjectValue(this, targets);
-    };
-
-    A.prototype.getAccessor = function getAccessor(name) {
-        // cache lookup
-        if (name in this._values) {
-            return this._values[name];
+    Animator.prototype._accessor_for = function _accessors_for(name) {
+        if (name in this._accessors) {
+            return this._accessors[name];
         }
-        var accessor = this._values[name] = this._engine.getAccessor(this._el, name);
+        var accessor = this._accessors[name] = this._lookup_accessor(name);
         if (accessor) {
             this._defaults[name] = accessor.current();
             return accessor;
@@ -136,29 +103,67 @@ var A = (function() {
         }
     };
 
-    A.prototype.animate = function animate(what, options) {
-        this.add(new Animation(this, what, options));
-        return this;
+    // TODO: maybe merge with _accessor_for ?
+    Animator.prototype._accessors_for = function _accessors_for(obj) {
+        var accessors = [];
+        for (var name in obj) {
+            var accessor = this._accessor_for(name);
+            if (accessor) {
+                accessors.push(accessor);
+            } else {
+                console.warn("A.js:", "unable to handle property '"+name+"'");
+            }
+        }
+        return accessors;
     };
 
-    A.prototype.delay = function delay(ms) {
-        this.add(new Animation(this, {}, { duration: ms }));
-        return this;
+    Animator.prototype._values_to = function _values_to(accessors, what) {
+        accessors.forEach(function(accessor) {
+            accessor.target(what[accessor.name]);
+        });
     };
 
-    A.prototype.set = function set(values) {
-        this.add({
-            start: function() {},
+    Animator.prototype._values_progress = function _values_to(progress, accessors) {
+        accessors.forEach(function(accessor) {
+            accessor.progress(progress);
+        });
+    };
+
+    /**
+     * Sets values without animation
+     */
+    Animator.prototype.set = function set(what) {
+        this._add({
             progress: function() {
-                this.getValueGroup(values).set(values);
+                this._accessors_for(what).forEach(function(accessor) {
+                    accessor.set(what[accessor.name]);
+                });
             }.bind(this),
         });
         return this;
     };
 
-    A.prototype.reset = function reset() {
-        this.add({
-            start: function() {},
+    /**
+     * Animates properties from curent to target
+     */
+    Animator.prototype.animate = function animate(target, options) {
+        this._add(new Animation(this, target, options));
+        return this;
+    };
+
+    /**
+     * Insert a delay to pause the animation-sequence for the given ms
+     */
+    Animator.prototype.delay = function delay(ms) {
+        this._add(new Animation(this, {}, { duration: ms }));
+        return this;
+    };
+
+    /**
+     * Resets the properties to their initial values
+     */
+    Animator.prototype.reset = function reset() {
+        this._add({
             progress: function() {
                 this.set(this._defaults);
             }.bind(this),
@@ -166,7 +171,10 @@ var A = (function() {
         return this;
     };
 
-    A.prototype.clear = function clear() {
+    /**
+     * Stops and clears any animation on that element. It's not resetting the properties.
+     */
+    Animator.prototype.clear = function clear() {
         if (this._tickId) {
             window.cancelAnimationFrame(this._tickId);
             this._tickId = undefined;
@@ -176,40 +184,38 @@ var A = (function() {
         return this;
     };
 
-    A.prototype.then = function then(callback) {
-        this.add({
-            start: function() {},
+    /**
+     * A callback is called when previous animations are done.
+     */
+    Animator.prototype.then = function then(callback) {
+        this._add({
             progress: callback.bind(undefined, this),
         });
         return this;
     };
 
 
-
-    // single animation
-    function Animation(scope, target, options) {
+    /**
+     * Animation class to represent a single animation and it's effected properties
+     */
+    function Animation(animator, what, options) {
         options = options || {}
-        this._scope = scope;
-        this._easing = EasingFunctions[options.easing] || (typeof(options.easing)==="function" && options.easing) || defaults.easing;
-        this._duration = options.duration || defaults.duration;
-        this._target = target;
-        this._value = scope.getValueGroup(target);//scope._engine.getValueGroup ? scope._engine.getValueGroup(scope, target) : new ObjectValue(scope, target);
+        this._animator = animator;
+        this._easing = EasingFunctions[options.easing] || (typeof(options.easing)==="function" && options.easing) || EasingFunctions[defaults.easing] || defaults.easing;
+        this._duration = options.duration!==undefined ? options.duration : defaults.duration;
+        this._accessors = animator._accessors_for(what);
+        this._what = what;
     }
 
     Animation.prototype.start = function start(timestamp) {
         this._starttime = timestamp
-        this._value.target(this._target);
-    };
-
-    Animation.prototype.stop = function stop() {
-        this._tickId && window.cancelAnimationFrame(this._tickId);
-        this._tickId = undefined;
+        this._animator._values_to(this._accessors, this._what);
     };
 
     Animation.prototype.progress = function progress(timestamp) {
         var d = timestamp - this._starttime;
-        var p = Math.min(1, 1/this._duration*d)
-        this._value.progress(this._easing(p));
+        var p = this._duration === 0 ? 1 : Math.min(1, 1/this._duration*d)
+        this._animator._values_progress(this._easing(p), this._accessors);
         return p<1;
     };
 
@@ -220,23 +226,19 @@ var A = (function() {
 
     var dom_accessors = {};
 
-    engines.push({
-        name: "DOM",
-        test: function(obj) {
-            if (obj instanceof HTMLElement) return obj;
-            if ('string' == typeof obj) return document.querySelector(obj);
-        },
+    /**
+     * DOMAnimator to manipulate dom nodes
+     */
+    function DOMAnimator(obj) {
+        Animator.apply(this, arguments);
+    };
+    DOMAnimator.prototype = Object.create(Animator.prototype, {});
+    DOMAnimator.prototype.constructor = DOMAnimator;
 
-        getAccessor: function(obj, name) {
-            var Klass = dom_accessors[name];
-            if (Klass) return new Klass(obj, name);
-        },
-
-        getValueGroup: function(scope, targets) {
-            return new ObjectValue(scope, targets);
-        },
-
-    });
+    DOMAnimator.prototype._lookup_accessor = function _lookup_accessor(name) {
+        var Klass = dom_accessors[name];
+        if (Klass) return new Klass(this._obj, name);
+    };
 
 
 /*
@@ -365,10 +367,29 @@ var A = (function() {
 
 
 
-    // API
-    function Constructor(ctx, a1, a2, a3) { return new A(ctx, a1, a2, a3); };
-    Constructor.exports = exports;
-    Constructor.defaults = defaults;
-    Constructor.engines = engines;
-    return Constructor;
+    exports.Animator = Animator;
+    exports.Animation = Animation;
+    exports.DOMAnimator = DOMAnimator;
+
+    DOMAnimator.factory = function factory(obj) {
+        if (obj instanceof HTMLElement) return new DOMAnimator(obj);
+        if ('string' === typeof obj) {
+            var obj = document.querySelector(obj);
+            if (obj) return new DOMAnimator(obj);
+        }
+    }
+    engines.push(DOMAnimator);
+
+    function A(obj, a1, a2, a3) {
+        for (var i=0, Klass, instance; (Klass=engines[i]); i++) {
+            instance = Klass.factory(obj, a1, a2, a3);
+            if (instance) return instance;
+        };
+        throw "Unable to find factory for " + obj;
+    };
+
+    A.defaults = defaults;
+    A.exports = exports;
+    A.engines = engines;
+    return A;
 })();
