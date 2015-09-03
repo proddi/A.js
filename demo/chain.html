@@ -19,9 +19,9 @@
         A('#box')
             .animate({ width: "300px", height: 50, backgroundColor: "red", color: "white" })
             .sleep(250)
-            .animate({ width: "75px", height: 200 })
-            .sleep(250)
-            .animate({ width: "100px", height: 100, backgroundColor: "white", color: "red" })
+            .animate({ height: "200px" })
+            .sleep(750)
+            .animate({ width: "100px", height: "100px", backgroundColor: "white", color: "red" }, { easing: "out-back"})
             ;
     </script>
   </body>

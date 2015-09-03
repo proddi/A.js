@@ -5,6 +5,10 @@ var A = (function() {
      * Easing Functions - inspired from http://gizma.com/easing/
      * only considering the t value for the range [0, 1] => [0, 1]
      */
+
+    // https://github.com/CharlotteGore/functional-easing/blob/master/penner-easing.js
+    var outBounce, inBounce;
+
     function easeOutBounce(n) {
         if ( n < ( 1 / 2.75 ) ) {
             return 7.5625 * n * n;
@@ -19,46 +23,163 @@ var A = (function() {
     function easeInBounce(t) { return 1-easeOutBounce(1-t); };
 
     EasingFunctions = {
-      // no easing, no acceleration
-      "linear": function (t) { return t },
-      // accelerating from zero velocity
-      "in": function (t) { return t*t },
-      // decelerating to zero velocity
-      "out": function (t) { return t*(2-t) },
-      // acceleration until halfway, then deceleration
-      "in-out": function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t },
-      // accelerating from zero velocity
-      "in-cubic": function (t) { return t*t*t },
-      // decelerating to zero velocity
-      "out-cubic": function (t) { return (--t)*t*t+1 },
-      // acceleration until halfway, then deceleration
-      "in-out-cubic": function (t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1 },
-      // accelerating from zero velocity
-      easeInQuart: function (t) { return t*t*t*t },
-      // decelerating to zero velocity
-      easeOutQuart: function (t) { return 1-(--t)*t*t*t },
-      // acceleration until halfway, then deceleration
-      easeInOutQuart: function (t) { return t<.5 ? 8*t*t*t*t : 1-8*(--t)*t*t*t },
-      // accelerating from zero velocity
-      easeInQuint: function (t) { return t*t*t*t*t },
-      // decelerating to zero velocity
-      easeOutQuint: function (t) { return 1+(--t)*t*t*t*t },
-      // acceleration until halfway, then deceleration
-      easeInOutQuint: function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t },
+        "linear": function (t) { return t },
 
-        "out-bounce": easeOutBounce,
-        "in-bounce": easeInBounce,
-        "in-out-bounce": function(t) { return t<.5 ? easeInBounce(t*2)*.5 : easeOutBounce(t*2-1)*.5+.5 },
+        "in-quad": function (t) { return t*t },
+        "out-quad": function (t) { return t*(2-t) },
+        "in-out-quad": function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t },
 
-        "out-elastic": function easeOutElastic(t) { var p = 0.3; return Math.pow(2,-10*t) * Math.sin((t-p/4)*(2*Math.PI)/p) + 1; },
+        "in-cubic": function (t) { return t*t*t },
+        "out-cubic": function (t) { return (--t)*t*t+1 },
+        "in-out-cubic": function (t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1 },
+
+        "in-quart": function (t) { return t*t*t*t },
+        "out-quart": function (t) { return 1-(--t)*t*t*t },
+        "in-out-quart": function(t) { return t<.5 ? 8*t*t*t*t : 1-8*(--t)*t*t*t },
+
+        "in-quint": function (t) { return t*t*t*t*t },
+        "out-quint": function (t) { return 1+(--t)*t*t*t*t },
+        "in-out-quint": function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t },
+
+        "in-sine" : function(t) { return -1*Math.cos(t*(Math.PI/2))+1 },
+        "out-sine" : function(t) { return Math.sin(t*(Math.PI/2)) },
+        "in-out-sine" : function(t) { return (Math.cos(Math.PI*t)-1)/-2 },
+
+  'in-expo' : function (t){
+    return Math.pow(2, 10 * (t - 1));
+  },
+  'out-expo' : function (t){
+    return -Math.pow(2, -10 * t) + 1;
+  },
+  'in-out-expo' : function (t){
+    t = t / 2;
+    return (Math.pow(2, 10 * (t - 1))) / 2;
+  },
+
+  'in-circ' : function (t){
+    return -1 * (Math.sqrt(1 - t * t) - 1);
+  },
+  'out-circ' : function (t){
+    t = t - 1;
+    return Math.sqrt(1 - t * t);
+  },
+  'in-out-circ' : function (t){
+    t = t / 2;
+    return (Math.sqrt(1 - t * t) - 1) / -2;
+  },
+    "in-back": function(t, overshoot) {
+        if (!overshoot && overshoot !== 0) {
+            overshoot = 1.70158;
+        }
+        return 1*t*t*((overshoot+1)*t-overshoot);
+    },
+    "out-back": function(t, overshoot) {
+        if (!overshoot && overshoot !== 0) {
+            overshoot = 1.70158;
+        }
+        t=t-1;
+        return t*t*((overshoot+1)*t+overshoot)+1;
+    },
+  'in-out-back' : function (t, overshoot){
+    if(!overshoot && overshoot !== 0){
+      overshoot = 1.70158;
+    }
+    t = t / 2;
+    overshoot = overshoot * 1.525;
+    return (t * t * ((overshoot + 1) * t - overshoot)) / 2;
+  },
+    "in-bounce" : function(t) { return 1-outBounce(1-t) },
+  'out-bounce' : function (t){
+    if (t < 0.36363636363636365) {
+      return 7.5625 * t * t;
+    } else if (t < 0.7272727272727273) {
+      t = t - 0.5454545454545454;
+      return 7.5625 * t * t + 0.75;
+    } else if (t < 0.9090909090909091) {
+      t = t - 0.8181818181818182;
+      return 7.5625 * t * t + 0.9375;
+    } else {
+      t = t - 0.9545454545454546;
+      return 7.5625 * t * t + 0.984375;
+    }
+  },
+  'in-out-bounce' : function (t){
+    if (t < 0.5){
+      return inBounce (t*2) * 0.5;
+    }
+    return outBounce ( t*2-1 ) * 0.5 + 1 * 0.5;
+  },
+  'in-elastic' : function (t, amplitude, period){
+    var offset;
+    // escape early for 0 and 1
+    if (t === 0 || t === 1) {
+      return t;
+    }
+    if (!period){
+      period = 0.3;
+    }
+    if (!amplitude){
+      amplitude = 1;
+      offset = period / 4;
+    } else {
+      offset = period / (Math.PI * 2.0) * Math.asin(1 / amplitude);
+    }
+    t = t - 1;
+    return -(amplitude * Math.pow(2,10 * t) * Math.sin(((t - offset) * (Math.PI * 2)) / period ));
+  },
+  'out-elastic' : function (t, amplitude, period){
+    var offset;
+    // escape early for 0 and 1
+    if (t === 0 || t === 1) {
+      return t;
+    }
+    if (!period){
+      period = 0.3;
+    }
+    if (!amplitude){
+      amplitude = 1;
+      offset = period / 4;
+    } else {
+      offset = period / (Math.PI * 2.0) * Math.asin(1 / amplitude);
+    }
+    return amplitude * Math.pow(2,-10 * t) * Math.sin( (t - offset) * ( Math.PI * 2 ) / period ) + 1;
+  },
+  'in-out-elastic' : function (t, amplitude, period){
+    var offset;
+    t = (t / 2) - 1;
+    // escape early for 0 and 1
+    if (t === 0 || t === 1) {
+      return t;
+    }
+    if (!period){
+      period = 0.44999999999999996;
+    }
+    if (!amplitude){
+      amplitude = 1;
+      offset = period / 4;
+    } else {
+      offset = period / (Math.PI * 2.0) * Math.asin(1 / amplitude);
+    }
+    return (amplitude * Math.pow(2, 10 * t) * Math.sin((t - offset) * (Math.PI * 2) / period )) / -2;
+  },
+
+
+        "o2ut-bounce": easeOutBounce,
+        "i2n-bounce": easeInBounce,
+        "i2n-out-bounce": function(t) { return t<.5 ? easeInBounce(t*2)*.5 : easeOutBounce(t*2-1)*.5+.5 },
+
+        "o2ut-elastic": function easeOutElastic(t) { var p = 0.3; return Math.pow(2,-10*t) * Math.sin((t-p/4)*(2*Math.PI)/p) + 1; },
     };
+
+    outBounce = EasingFunctions['out-bounce'];
+    inBounce = EasingFunctions['in-bounce'];
 
     /**
      * Defaults for the animation engine
      */
     var defaults = {
         duration: 500,
-        easing: "in-out",
+        easing: "in-out-quad",
     };
 
     /**
