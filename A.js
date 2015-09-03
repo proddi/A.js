@@ -90,7 +90,7 @@ var A = (function() {
         this._tickId = this._current && window.requestAnimationFrame(this._tickFuncHandler) || undefined;
     };
 
-    Animator.prototype._accessor_for = function _accessors_for(name) {
+    Animator.prototype._accessor_for = function _accessor_for(name) {
         if (name in this._accessors) {
             return this._accessors[name];
         }
@@ -230,19 +230,6 @@ var A = (function() {
 
     var dom_accessors = {};
 
-    /**
-     * DOMAnimator to manipulate dom nodes
-     */
-    function DOMNode(obj) {
-        Animator.apply(this, arguments);
-    };
-    DOMNode.prototype = Object.create(Animator.prototype, {});
-    DOMNode.prototype.constructor = DOMNode;
-
-    DOMNode.prototype._lookup_accessor = function _lookup_accessor(name) {
-        return dom_accessors[name] && dom_accessors[name](this, name);
-    };
-
 
     function Property(scope, name) {
         this.name = name;
@@ -264,7 +251,6 @@ var A = (function() {
         return this.from;
     };
     DOMTransformProperty.prototype.target = function target(values) {
-//        console.log("target>", "from=", this.from, ", to=", this.to, ", values=", values);
         for (var key in this.to) { this.from[key] = this.to[key]; }
         for (var key in values) {
             if (key in this.functions) {
@@ -273,7 +259,6 @@ var A = (function() {
                 console.warn("transform is not supporting", key);
             }
         }
-//        console.log("target<", "from=", this.from, ", to=", this.to, ", values=", values);
         this.to = values;
     };
     DOMTransformProperty.prototype.progress = function progress(progress) {
@@ -303,18 +288,13 @@ var A = (function() {
     dom_accessors.transform = function(a,b,c) { return new DOMTransformProperty(a, b, c); };
 
 
-/*
- * CSS value accessor
- */
-
-    var foo = {  // replace my with a regexp
-        backgroundColor: "background-color",
-        marginLeft: "margin-left",
-        borderColor: "border-color",
-    };
-
+    /**
+     * CSS value accessor
+     */
     function CSSValue(scope, name) {
         this.name = name;
+        this.propName = name.replace(/([a-z\d])([A-Z])/g, '$1-$2');
+        this.unit = undefined;
         this.el = scope._obj;
         this.css = window.getComputedStyle(this.el);
     };
@@ -323,31 +303,33 @@ var A = (function() {
         this._set(value);
     };
     CSSValue.prototype._set = function _set(value) {
-        if ("opacity"===this.name) {
-            this.el.style[this.name] = value;
-        } else {
-            this.el.style[this.name] = value + "px";
-        }
+        this.el.style[this.name] = this.unit ? value + this.unit : value;
     };
     CSSValue.prototype.current = function current() {
-        return parseInt(this.css.getPropertyValue(foo[this.name]) || this.css.getPropertyValue(this.name));
+        var str = this.css.getPropertyValue(this.propName);
+        value = parseInt(str);
+        this.unit = this.unit || str.substr((""+value).length)
+        return value;
     };
     CSSValue.prototype.target = function target(value) {
+        if (typeof value === 'string') {
+            var str = value;
+            value = parseInt(str);
+            this.unit = str.substr((""+value).length)
+        } else {
+            this.unit = undefined;
+        }
         this.from = this.to || this.current();
         this.to = value;
     };
     CSSValue.prototype.progress = function progress(progress) {
         this._set(this.from + (this.to-this.from)*progress);
     };
-    dom_accessors.opacity = function(a,b,c) { return new CSSValue(a, b, c); };
-    dom_accessors.width = function(a,b,c) { return new CSSValue(a, b, c); };
-    dom_accessors.height = function(a,b,c) { return new CSSValue(a, b, c); };
-    dom_accessors.marginLeft = function(a,b,c) { return new CSSValue(a, b, c); };
 
-/*
- * CSS color accessor
- */
 
+    /**
+     * CSS color accessor
+     */
     var namedColors = {
         black: { r:0  , g:0  , b:0  , },
         white: { r:255, g:255, b:255, },
@@ -404,6 +386,7 @@ var A = (function() {
 
     function CSSColorValue(scope, name) {
         this.el = scope._obj;
+        this.propName = name.replace(/([a-z\d])([A-Z])/g, '$1-$2');
         this.css = window.getComputedStyle(this.el);
         this.name = name;
     };
@@ -417,7 +400,7 @@ var A = (function() {
         this.el.style[this.name] = (c.a === undefined) ? "rgb("+c.r+","+c.g+","+c.b+")" : "rgba("+c.r+","+c.g+","+c.b+","+c.a+")";
     };
     CSSColorValue.prototype.current = function current() {
-        return parseColor(this.css.getPropertyValue(foo[this.name]) || this.css.getPropertyValue(this.name));
+        return parseColor(this.css.getPropertyValue(this.propName) || this.css.getPropertyValue(this.name));
     };
     CSSColorValue.prototype.target = function target(value) {
         this.from = this.to || this.current();
@@ -428,15 +411,25 @@ var A = (function() {
         this._set(c);
     };
 
-    dom_accessors.color = function(a,b,c) { return new CSSColorValue(a, b, c); };
-    dom_accessors.backgroundColor = function(a,b,c) { return new CSSColorValue(a, b, c); };
-    dom_accessors.borderColor = function(a,b,c) { return new CSSColorValue(a, b, c); };
 
+    /**
+     * DOMAnimator to manipulate dom nodes
+     */
+    function DOMNode(obj) {
+        Animator.apply(this, arguments);
+    };
+    DOMNode.prototype = Object.create(Animator.prototype, {});
+    DOMNode.prototype.constructor = DOMNode;
 
-
-    exports.Animator = Animator;
-    exports.Animation = Animation;
-    exports.DOMNode = DOMNode;
+    DOMNode.prototype._lookup_accessor = function _lookup_accessor(name) {
+        if (name in dom_accessors) {
+            return dom_accessors[name](this, name);
+        };
+        if (name.toLowerCase().indexOf("color")!==-1) {
+            return new CSSColorValue(this, name);
+        };
+        return new CSSValue(this, name);
+    };
 
     DOMNode.factory = function factory(obj) {
         if (obj instanceof HTMLElement) return new DOMNode(obj);
@@ -446,6 +439,12 @@ var A = (function() {
         }
     }
     engines.push(DOMNode);
+
+
+    exports.Animator = Animator;
+    exports.Animation = Animation;
+    exports.DOMNode = DOMNode;
+
 
     function A(obj, a1, a2, a3) {
         for (var i=0, Klass, instance; (Klass=engines[i]); i++) {
