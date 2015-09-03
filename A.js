@@ -1,9 +1,23 @@
 var A = (function() {
 
+    // https://github.com/component/ease/blob/master/index.js
     /*
      * Easing Functions - inspired from http://gizma.com/easing/
      * only considering the t value for the range [0, 1] => [0, 1]
      */
+    function easeOutBounce(n) {
+        if ( n < ( 1 / 2.75 ) ) {
+            return 7.5625 * n * n;
+        } else if ( n < ( 2 / 2.75 ) ) {
+            return 7.5625 * ( n -= ( 1.5 / 2.75 ) ) * n + 0.75;
+        } else if ( n < ( 2.5 / 2.75 ) ) {
+            return 7.5625 * ( n -= ( 2.25 / 2.75 ) ) * n + 0.9375;
+        } else {
+            return 7.5625 * ( n -= ( 2.625 / 2.75 ) ) * n + 0.984375;
+        }
+    };
+    function easeInBounce(t) { return 1-easeOutBounce(1-t); };
+
     EasingFunctions = {
       // no easing, no acceleration
       "linear": function (t) { return t },
@@ -30,8 +44,14 @@ var A = (function() {
       // decelerating to zero velocity
       easeOutQuint: function (t) { return 1+(--t)*t*t*t*t },
       // acceleration until halfway, then deceleration
-      easeInOutQuint: function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t }
-    }
+      easeInOutQuint: function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t },
+
+        "out-bounce": easeOutBounce,
+        "in-bounce": easeInBounce,
+        "in-out-bounce": function(t) { return t<.5 ? easeInBounce(t*2)*.5 : easeOutBounce(t*2-1)*.5+.5 },
+
+        "out-elastic": function easeOutElastic(t) { var p = 0.3; return Math.pow(2,-10*t) * Math.sin((t-p/4)*(2*Math.PI)/p) + 1; },
+    };
 
     /**
      * Defaults for the animation engine
@@ -193,7 +213,7 @@ var A = (function() {
      */
     Animator.prototype.then = function then(callback) {
         this._add({
-            progress: callback.bind(undefined, this),
+            progress: callback.bind(this, this),
         });
         return this;
     };

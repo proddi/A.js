@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <script src="../A.js"></script>
+    <script src="js/T.js"></script>
+    <style>
+        .track {
+            background: #eee;
+            margin: 5px;
+            width: 100%;
+        }
+        .track .label {
+            float: left;
+        }
+
+        .track .box {
+            border: 1px solid #888;
+            width: 100px;
+            height: 20px;
+            background-color: white;
+            color: black;
+            margin-left: 130px;
+        }
+    </style>
+    </head>
+
+  <body>
+    <div id="template" class="track">
+        <span id="label">a label</span>
+        <div id="box" class="box"></div>
+    </div>
+    <script>
+        var TRACK = T('#template');
+
+        for (var key in A.exports.easings) {
+            var clone = TRACK.clone().appendTo(TRACK.parent);
+            clone.find("#label").html(key);
+
+            A(clone.find("#box").node)
+                .sleep(500)
+                .animate({ transform: { x: 500 } }, { duration: 5000, easing: key, })
+                .sleep(500)
+                .animate({ transform: { x: 0 } }, { duration: 5000, easing: key, })
+                ;
+        };
+    </script>
+  </body>
+</html>
