@@ -45,10 +45,10 @@
         var SECTION = T('#section');
         var TRACK = T('#template');
 
-        ["out-", "in-out-", "in-"].forEach(function(prefix) {
-            var section = SECTION.clone({ label: prefix }).appendTo(SECTION.parent)
+        [/^\w*$/, /^out-/, /^in-out-/, /^in-\w*$/].forEach(function(filter) {
+            var section = SECTION.clone({ label: ""+filter }).appendTo(SECTION.parent)
             for (var key in A.exports.easings) {
-                if (key.indexOf(prefix)!==0 || key.lastIndexOf("-") >= prefix.length) continue;
+                if (!filter.test(key)) continue;
 
                 var clone = TRACK.clone({ label: key }).appendTo(section);
 

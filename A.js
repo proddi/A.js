@@ -28,6 +28,7 @@ var A = (function() {
         EasingFunctions["out-"+name] = function(easeIn, t) { return 1-easeIn(1-t); }.bind({}, easeIn);
         EasingFunctions["in-out-"+name] = function(easeIn, t) { return t<0.5 ? easeIn(t*2)/2 : 1-easeIn(t*-2+2)/2; }.bind({}, easeIn);
     };
+    EasingFunctions["linear"] = function(t) { return t };
 
     /**
      * Defaults for the animation engine
