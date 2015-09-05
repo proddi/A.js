@@ -1,48 +1,74 @@
 <!DOCTYPE html>
 <html>
     <head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
     <script src="../A.js"></script>
     <script src="js/T.js"></script>
+    <script src="js/markup.min.js"></script>
     <style>
+        .row {
+            margin: 2px 0;
+        }
         .track {
             background: #eee;
-            margin: 5px;
-            width: 100%;
+            padding: 2px;
         }
-        .track .label {
-            float: left;
-        }
-
-        .track .box {
+        .box {
             border: 1px solid #888;
-            width: 100px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
+            background-color: white;
+        }
+        .color {
             background-color: white;
             color: black;
-            margin-left: 130px;
         }
     </style>
     </head>
 
-  <body>
-    <div id="template" class="track">
-        <span id="label">a label</span>
-        <div id="box" class="box"></div>
+<body>
+    <div class="container">
+        <div id="section" class="row">
+            <h3 class="col-md-12"></h3>
+        </div>
+        <div id="template" class="row">
+            <div class="col-md-3">
+                <div id="color" class="color text-right"><strong>{{label}} &nbsp; </strong></div>
+            </div>
+            <div class="col-md-6 track">
+                <div id="box" class="box"></div>
+            </div>
+        </div>
     </div>
     <script>
+        T.engine = Mark.up.bind(Mark);
+        var SECTION = T('#section');
         var TRACK = T('#template');
 
-        for (var key in A.exports.easings) {
-            var clone = TRACK.clone().appendTo(TRACK.parent);
-            clone.find("#label").html(key);
+        ["out-", "in-out-", "in-"].forEach(function(prefix) {
+            var section = SECTION.clone({ label: prefix }).appendTo(SECTION.parent)
+            for (var key in A.exports.easings) {
+                if (key.indexOf(prefix)!==0 || key.lastIndexOf("-") >= prefix.length) continue;
 
-            A(clone.find("#box").node)
-                .sleep(500)
-                .animate({ transform: { x: 500 } }, { duration: 5000, easing: key, })
-                .sleep(500)
-                .animate({ transform: { x: 0 } }, { duration: 5000, easing: key, })
-                ;
-        };
+                var clone = TRACK.clone({ label: key }).appendTo(section);
+
+                // animate box
+                A(clone.find("#box").node)
+                    .sleep(200)
+                    .animate({ transform: { x: 570-20 } }, { duration: 2500, easing: key, })
+                    .sleep(500)
+                    .animate({ transform: { x: 0 } }, { duration: 2000, easing: key, })
+                    ;
+
+                // animate color
+                A(clone.find("#color").node)
+                    .sleep(200)
+                    .animate({ backgroundColor: "red", color: "white" }, { duration: 2500, easing: key, })
+                    .sleep(500)
+                    .animate({ backgroundColor: "white", color: "black" }, { duration: 2000, easing: key, })
+                    ;
+            };
+        });
     </script>
   </body>
 </html>

@@ -10,6 +10,7 @@ var T = (function() {
         this.node = dom;
     };
     Node.prototype.appendTo = function appendTo(node) {
+        if (node instanceof Node) node = node.node;
         node.appendChild(this.node);
         return this;
     };
@@ -33,17 +34,18 @@ var T = (function() {
     function Template(el) {
         if (!el) throw "invalid element";
         this.parent = el.parentNode;
+        while (container.firstChild) container.removeChild(container.firstChild);
         container.appendChild(el);
         this.markup = container.innerHTML;
     };
-    Template.prototype.clone = function clone() {
-        return new Clone(this);
+    Template.prototype.clone = function clone(context) {
+        return new Clone(this, context);
     };
 
     /** Template clone */
-    function Clone(template) {
+    function Clone(template, context) {
         this.template = template;
-        container.innerHTML = template.markup;
+        container.innerHTML = (template.engine || T.engine)(template.markup, context || {});
         Node.call(this, container.childNodes[0]);
     };
     Clone.prototype = Object.create(Node.prototype, {});
@@ -54,5 +56,6 @@ var T = (function() {
         if ('string' === typeof el) el = document.querySelector(el);
         return new Template(el);
     };
+    T.engine = function(markup, context) { return markup; }
     return T;
 })();
